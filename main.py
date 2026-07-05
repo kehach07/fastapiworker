@@ -69,32 +69,26 @@ def to_bool(v):
 def root():
     return {"message": "Config Service Running"}
 
-
 @app.get("/effective-config")
 def effective_config(set: list[str] = Query(default=[])):
     cfg = dict(config)
 
-    # CLI overrides
     for item in set:
         if "=" not in item:
             continue
 
-        k, v = item.split("=", 1)
+        key, value = item.split("=", 1)
 
-        if k in ["port", "workers"]:
-            cfg[k] = int(v)
-
-        elif k == "debug":
-            cfg[k] = to_bool(v)
-
+        if key in ("port", "workers"):
+            cfg[key] = int(value)
+        elif key == "debug":
+            cfg[key] = value.lower() in ("true", "1", "yes", "on")
         else:
-            cfg[k] = v
+            cfg[key] = value
 
-    # Type coercion
     cfg["port"] = int(cfg["port"])
     cfg["workers"] = int(cfg["workers"])
-    cfg["debug"] = to_bool(cfg["debug"])
-
+    cfg["debug"] = bool(cfg["debug"])
     cfg["api_key"] = "****"
 
     return cfg
