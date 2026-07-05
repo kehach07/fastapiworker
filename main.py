@@ -5,7 +5,9 @@ import yaml
 
 app = FastAPI()
 
-# ---------------- CORS ----------------
+# -----------------------------
+# CORS
+# -----------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,7 +16,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------- Defaults ----------------
+# -----------------------------
+# Defaults
+# -----------------------------
 config = {
     "port": 8000,
     "workers": 1,
@@ -23,37 +27,50 @@ config = {
     "api_key": "default-secret-000",
 }
 
-# ---------------- YAML ----------------
+# -----------------------------
+# YAML (config.development.yaml)
+# -----------------------------
 try:
-    with open("config.development.yaml") as f:
-        config.update(yaml.safe_load(f) or {})
+    with open("config.development.yaml", "r") as f:
+        data = yaml.safe_load(f)
+        if data:
+            config.update(data)
 except FileNotFoundError:
     pass
 
-# ---------------- .env ----------------
+# -----------------------------
+# .env
+# -----------------------------
 try:
-    with open(".env") as f:
+    with open(".env", "r") as f:
         for line in f:
             line = line.strip()
-            if not line or "=" not in line:
+
+            if not line or line.startswith("#") or "=" not in line:
                 continue
 
-            k, v = line.split("=", 1)
+            key, value = line.split("=", 1)
 
-            if k == "NUM_WORKERS":
-                config["workers"] = int(v)
+            key = key.strip()
+            value = value.strip()
+
+            if key == "NUM_WORKERS":
+                config["workers"] = value
             else:
-                config[k.lower()] = v
+                config[key.lower()] = value
+
 except FileNotFoundError:
     pass
 
-# ---------------- OS ENV ----------------
+# -----------------------------
+# OS Environment (APP_*)
+# -----------------------------
 mapping = {
     "APP_PORT": "port",
+    "APP_WORKERS": "workers",
     "APP_DEBUG": "debug",
     "APP_LOG_LEVEL": "log_level",
     "APP_API_KEY": "api_key",
-    "APP_WORKERS": "workers",
 }
 
 for env_key, cfg_key in mapping.items():
@@ -61,34 +78,64 @@ for env_key, cfg_key in mapping.items():
         config[cfg_key] = os.environ[env_key]
 
 
+# -----------------------------
+# Helpers
+# -----------------------------
 def to_bool(v):
-    return str(v).lower() in ["true", "1", "yes", "on"]
+    if isinstance(v, bool):
+        return v
+
+    return str(v).strip().lower() in (
+        "true",
+        "1",
+        "yes",
+        "on",
+    )
 
 
+# -----------------------------
+# Root
+# -----------------------------
 @app.get("/")
 def root():
     return {"message": "Config Service Running"}
 
+
+# -----------------------------
+# Effective Config
+# -----------------------------
 @app.get("/effective-config")
-def effective_config(set: list[str] = Query(default=[])):
+def effective_config(
+    set: list[str] = Query(default=[]),
+):
     cfg = dict(config)
 
+    # CLI overrides
     for item in set:
         if "=" not in item:
             continue
 
         key, value = item.split("=", 1)
 
-        if key in ("port", "workers"):
-            cfg[key] = int(value)
+        if key == "port":
+            cfg["port"] = int(value)
+
+        elif key == "workers":
+            cfg["workers"] = int(value)
+
         elif key == "debug":
-            cfg[key] = value.lower() in ("true", "1", "yes", "on")
+            cfg["debug"] = to_bool(value)
+
         else:
             cfg[key] = value
 
+    # Final type coercion
     cfg["port"] = int(cfg["port"])
     cfg["workers"] = int(cfg["workers"])
-    cfg["debug"] = bool(cfg["debug"])
+    cfg["debug"] = to_bool(cfg["debug"])
+    cfg["log_level"] = str(cfg["log_level"])
+
+    # Always mask secret
     cfg["api_key"] = "****"
 
     return cfg
