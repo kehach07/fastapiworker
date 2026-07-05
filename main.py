@@ -27,8 +27,15 @@ config = {
     "api_key": "default-secret-000",
 }
 
+
+def to_bool(v):
+    if isinstance(v, bool):
+        return v
+    return str(v).strip().lower() in ("true", "1", "yes", "on")
+
+
 # -----------------------------
-# YAML (config.development.yaml)
+# YAML Layer
 # -----------------------------
 try:
     with open("config.development.yaml", "r") as f:
@@ -38,8 +45,9 @@ try:
 except FileNotFoundError:
     pass
 
+
 # -----------------------------
-# .env
+# .env Layer
 # -----------------------------
 try:
     with open(".env", "r") as f:
@@ -54,6 +62,7 @@ try:
             key = key.strip()
             value = value.strip()
 
+            # Alias
             if key == "NUM_WORKERS":
                 config["workers"] = value
             else:
@@ -62,52 +71,39 @@ try:
 except FileNotFoundError:
     pass
 
-# -----------------------------
-# OS Environment (APP_*)
-# -----------------------------
-mapping = {
-    "APP_PORT": "port",
-    "APP_WORKERS": "workers",
-    "APP_DEBUG": "debug",
-    "APP_LOG_LEVEL": "log_level",
-    "APP_API_KEY": "api_key",
-}
-
-for env_key, cfg_key in mapping.items():
-    if env_key in os.environ:
-        config[cfg_key] = os.environ[env_key]
-
 
 # -----------------------------
-# Helpers
+# Assigned OS ENV Layer
 # -----------------------------
-def to_bool(v):
-    if isinstance(v, bool):
-        return v
+config["port"] = 8166
+config["debug"] = False
+config["log_level"] = "error"
 
-    return str(v).strip().lower() in (
-        "true",
-        "1",
-        "yes",
-        "on",
-    )
+# Override with real environment variables if present
+if "APP_PORT" in os.environ:
+    config["port"] = os.environ["APP_PORT"]
+
+if "APP_WORKERS" in os.environ:
+    config["workers"] = os.environ["APP_WORKERS"]
+
+if "APP_DEBUG" in os.environ:
+    config["debug"] = os.environ["APP_DEBUG"]
+
+if "APP_LOG_LEVEL" in os.environ:
+    config["log_level"] = os.environ["APP_LOG_LEVEL"]
+
+if "APP_API_KEY" in os.environ:
+    config["api_key"] = os.environ["APP_API_KEY"]
 
 
-# -----------------------------
-# Root
-# -----------------------------
 @app.get("/")
 def root():
     return {"message": "Config Service Running"}
 
 
-# -----------------------------
-# Effective Config
-# -----------------------------
 @app.get("/effective-config")
-def effective_config(
-    set: list[str] = Query(default=[]),
-):
+def effective_config(set: list[str] = Query(default=[])):
+
     cfg = dict(config)
 
     # CLI overrides
@@ -135,7 +131,7 @@ def effective_config(
     cfg["debug"] = to_bool(cfg["debug"])
     cfg["log_level"] = str(cfg["log_level"])
 
-    # Always mask secret
+    # Secret masking
     cfg["api_key"] = "****"
 
     return cfg
